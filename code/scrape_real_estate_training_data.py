@@ -2,21 +2,21 @@
 Simple real-estate scraper for model-training data.
 
 What it does:
-1. Reads the web sites from ../מסמכים/sitelist.md
+1. Reads the web sites from ../docs/sitelist.md
 2. Crawls sale/listing pages from those sites
 3. Extracts useful model features: price, rooms, area, location, amenities, etc.
 4. Writes:
-   - ../נתונים/scraped_real_estate_training.csv
-   - ../נתונים/scraped_real_estate_raw.jsonl
+   - ../data/scraped_real_estate_training.csv
+   - ../data/scraped_real_estate_raw.jsonl
 
 Install dependencies:
     pip install requests beautifulsoup4
 
 Example:
-    python קוד/scrape_real_estate_training_data.py --max-pages-per-site 300
+    python code/scrape_real_estate_training_data.py --max-pages-per-site 300
 
 Use a larger number when you want more training data:
-    python קוד/scrape_real_estate_training_data.py --max-pages-per-site 2000 --delay 1.5
+    python code/scrape_real_estate_training_data.py --max-pages-per-site 2000 --delay 1.5
 """
 
 from __future__ import annotations
@@ -52,9 +52,9 @@ ARS_PER_USD = 1500
 UYU_PER_USD = 40
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SITELIST = PROJECT_ROOT / "מסמכים" / "sitelist.md"
-DEFAULT_OUTPUT_CSV = PROJECT_ROOT / "נתונים" / "scraped_real_estate_training.csv"
-DEFAULT_RAW_JSONL = PROJECT_ROOT / "נתונים" / "scraped_real_estate_raw.jsonl"
+DEFAULT_SITELIST = PROJECT_ROOT / "docs" / "sitelist.md"
+DEFAULT_OUTPUT_CSV = PROJECT_ROOT / "data" / "scraped_real_estate_training.csv"
+DEFAULT_RAW_JSONL = PROJECT_ROOT / "data" / "scraped_real_estate_raw.jsonl"
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
