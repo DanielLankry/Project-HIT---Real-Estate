@@ -1,2 +1,5 @@
 AGENTS.md
 TASKS.md
+__pycache__/
+*.pyc
+data/*.jsonl

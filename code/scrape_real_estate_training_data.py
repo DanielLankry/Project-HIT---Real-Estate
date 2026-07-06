@@ -7,6 +7,7 @@ What it does:
 3. Extracts useful model features: price, rooms, area, location, amenities, etc.
 4. Writes:
    - ../data/scraped_real_estate_training.csv
+   - ../data/scraped_real_estate_model_features.csv
    - ../data/scraped_real_estate_raw.jsonl
 
 Install dependencies:
@@ -54,6 +55,7 @@ UYU_PER_USD = 40
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SITELIST = PROJECT_ROOT / "docs" / "sitelist.md"
 DEFAULT_OUTPUT_CSV = PROJECT_ROOT / "data" / "scraped_real_estate_training.csv"
+DEFAULT_MODEL_OUTPUT_CSV = PROJECT_ROOT / "data" / "scraped_real_estate_model_features.csv"
 DEFAULT_RAW_JSONL = PROJECT_ROOT / "data" / "scraped_real_estate_raw.jsonl"
 
 USER_AGENT = (
@@ -94,6 +96,13 @@ SITE_CONFIGS = (
             "/departamentos/venta/palermo",
             "/departamentos/venta/belgrano",
             "/departamentos/venta/caballito",
+            "/departamentos/venta/recoleta",
+            "/departamentos/venta/villa-crespo",
+            "/departamentos/venta/almagro",
+            "/departamentos/venta/nunez",
+            "/departamentos/venta/olivos",
+            "/departamentos/venta/tigre",
+            "/departamentos/venta/la-plata",
             "/casas/venta/argentina",
             "/terrenos/venta/argentina",
             "/departamentos-en-venta",
@@ -112,6 +121,13 @@ SITE_CONFIGS = (
             "/departamentos/venta/palermo",
             "/departamentos/venta/belgrano",
             "/departamentos/venta/caballito",
+            "/departamentos/venta/recoleta",
+            "/departamentos/venta/villa-crespo",
+            "/departamentos/venta/almagro",
+            "/departamentos/venta/nunez",
+            "/departamentos/venta/olivos",
+            "/departamentos/venta/tigre",
+            "/departamentos/venta/la-plata",
             "/departamentos-en-venta",
         ),
         detail_patterns=(re.compile(r"--\d+(?:$|[/?])"),),
@@ -130,6 +146,15 @@ SITE_CONFIGS = (
             "/departamentos-venta-palermo.html",
             "/departamentos-venta-belgrano.html",
             "/departamentos-venta-caballito.html",
+            "/departamentos-venta-recoleta.html",
+            "/departamentos-venta-villa-crespo.html",
+            "/departamentos-venta-almagro.html",
+            "/departamentos-venta-nunez.html",
+            "/departamentos-venta-olivos.html",
+            "/departamentos-venta-tigre.html",
+            "/departamentos-venta-la-plata.html",
+            "/departamentos-venta-nueva-cordoba.html",
+            "/departamentos-venta-general-paz.html",
             "/casas-venta.html",
             "/terrenos-venta.html",
             "/inmuebles-venta.html",
@@ -143,6 +168,15 @@ SITE_CONFIGS = (
             "/departamentos-venta-palermo.html",
             "/departamentos-venta-belgrano.html",
             "/departamentos-venta-caballito.html",
+            "/departamentos-venta-recoleta.html",
+            "/departamentos-venta-villa-crespo.html",
+            "/departamentos-venta-almagro.html",
+            "/departamentos-venta-nunez.html",
+            "/departamentos-venta-olivos.html",
+            "/departamentos-venta-tigre.html",
+            "/departamentos-venta-la-plata.html",
+            "/departamentos-venta-nueva-cordoba.html",
+            "/departamentos-venta-general-paz.html",
         ),
         detail_patterns=(
             re.compile(r"/propiedades/.*\.html(?:$|[/?])"),
@@ -162,6 +196,21 @@ SITE_CONFIGS = (
             "/venta/apartamentos/cordon",
             "/venta/apartamentos/malvin",
             "/venta/apartamentos/carrasco",
+            "/venta/apartamentos/punta-carretas",
+            "/venta/apartamentos/tres-cruces",
+            "/venta/apartamentos/centro",
+            "/venta/apartamentos/buceo",
+            "/venta/apartamentos/la-blanqueada",
+            "/venta/apartamentos/parque-rodo",
+            "/venta/apartamentos/ciudad-vieja",
+            "/venta/apartamentos/parque-batlle",
+            "/venta/apartamentos/aguada",
+            "/venta/apartamentos/maldonado",
+            "/venta/apartamentos/roosevelt",
+            "/venta/apartamentos/playa-brava",
+            "/venta/apartamentos/playa-mansa",
+            "/venta/apartamentos/canelones",
+            "/venta/apartamentos/ciudad-de-la-costa",
             "/venta/inmuebles",
             "/venta/casas",
             "/venta/terrenos",
@@ -174,6 +223,21 @@ SITE_CONFIGS = (
             "/venta/apartamentos/cordon",
             "/venta/apartamentos/malvin",
             "/venta/apartamentos/carrasco",
+            "/venta/apartamentos/punta-carretas",
+            "/venta/apartamentos/tres-cruces",
+            "/venta/apartamentos/centro",
+            "/venta/apartamentos/buceo",
+            "/venta/apartamentos/la-blanqueada",
+            "/venta/apartamentos/parque-rodo",
+            "/venta/apartamentos/ciudad-vieja",
+            "/venta/apartamentos/parque-batlle",
+            "/venta/apartamentos/aguada",
+            "/venta/apartamentos/maldonado",
+            "/venta/apartamentos/roosevelt",
+            "/venta/apartamentos/playa-brava",
+            "/venta/apartamentos/playa-mansa",
+            "/venta/apartamentos/canelones",
+            "/venta/apartamentos/ciudad-de-la-costa",
         ),
         detail_patterns=(re.compile(r"/\d{6,}(?:$|[/?])"),),
         useful_words=("venta", "apartamento", "casa", "terreno", "inmuebles"),
@@ -238,6 +302,7 @@ BASE_COLUMNS = [
     "bedrooms",
     "bathrooms",
     "parking_spaces",
+    "has_parking",
     "toilets",
     "covered_area_sqm",
     "total_area_sqm",
@@ -257,6 +322,7 @@ BASE_COLUMNS = [
     "area_per_room_sqm",
     "bedrooms_per_bathroom",
     "bathrooms_per_bedroom",
+    "bathroom_ratio",
     "amenity_count",
     "core_feature_count",
     "title_length_chars",
@@ -370,6 +436,24 @@ AMENITY_COLUMNS = [
 ]
 
 CSV_COLUMNS = BASE_COLUMNS + AMENITY_COLUMNS
+TARGET_COLUMN = "price_usd"
+MODEL_FEATURE_COLUMNS = [
+    "effective_area_sqm",
+    "bedrooms",
+    "bathrooms",
+    "total_rooms",
+    "parking_spaces",
+    "has_parking",
+    "floor_number",
+    "is_high_floor",
+    "bathroom_ratio",
+    "expenses_usd",
+    "age_years",
+    "location_key",
+    "property_type",
+    "amenity_count",
+]
+MODEL_CSV_COLUMNS = [TARGET_COLUMN] + MODEL_FEATURE_COLUMNS
 AMENITY_COUNT_EXCLUDE = {
     "has_coordinates",
     "has_description",
@@ -383,6 +467,7 @@ NUMERIC_COLUMNS = {
     "bedrooms",
     "bathrooms",
     "parking_spaces",
+    "has_parking",
     "toilets",
     "covered_area_sqm",
     "total_area_sqm",
@@ -404,6 +489,7 @@ NUMERIC_COLUMNS = {
     "area_per_room_sqm",
     "bedrooms_per_bathroom",
     "bathrooms_per_bedroom",
+    "bathroom_ratio",
     "amenity_count",
     "core_feature_count",
     "title_length_chars",
@@ -536,6 +622,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--sitelist", type=Path, default=DEFAULT_SITELIST)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_CSV)
+    parser.add_argument(
+        "--model-output",
+        type=Path,
+        default=DEFAULT_MODEL_OUTPUT_CSV,
+        help="Compact CSV with price_usd plus selected prediction features.",
+    )
     parser.add_argument("--raw-output", type=Path, default=DEFAULT_RAW_JSONL)
     parser.add_argument("--max-pages-per-site", type=int, default=300)
     parser.add_argument("--max-properties-per-site", type=int, default=200)
@@ -1457,6 +1549,9 @@ def add_derived_features(row: dict[str, Any]) -> None:
     property_type = clean_text(row.get("property_type")).lower()
     effective_area = row.get("covered_area_sqm") or row.get("total_area_sqm")
     bedrooms_for_rooms = parse_number(row.get("bedrooms"))
+    bedrooms = parse_number(row.get("bedrooms"))
+    bathrooms = parse_number(row.get("bathrooms"))
+    parking_spaces = parse_number(row.get("parking_spaces"))
     rooms = row.get("total_rooms") or (
         bedrooms_for_rooms + 1 if bedrooms_for_rooms is not None else None
     )
@@ -1474,10 +1569,14 @@ def add_derived_features(row: dict[str, Any]) -> None:
     row["has_exact_address"] = 1 if clean_text(row.get("street")) else 0
     row["has_expenses"] = 1 if row.get("expenses_original") else 0
     row["has_description"] = 1 if description else 0
+    row["has_parking"] = 1 if parking_spaces is not None and parking_spaces > 0 else 0
     row["effective_area_sqm"] = effective_area or ""
     row["area_per_room_sqm"] = safe_ratio(effective_area, rooms)
     row["bedrooms_per_bathroom"] = safe_ratio(row.get("bedrooms"), row.get("bathrooms"))
     row["bathrooms_per_bedroom"] = safe_ratio(row.get("bathrooms"), row.get("bedrooms"))
+    row["bathroom_ratio"] = (
+        round(bathrooms / max(bedrooms or 0, 1), 2) if bathrooms is not None else ""
+    )
     row["amenity_count"] = sum(
         1
         for column in AMENITY_COLUMNS
@@ -1657,7 +1756,9 @@ def row_matches_property_mode(row: dict[str, Any], apartments_only: bool) -> boo
     if not apartments_only:
         return True
     property_type = str(row.get("property_type", "")).lower()
-    return property_type == "apartment" or apartment_word_in_url(str(row.get("source_url", "")))
+    if property_type:
+        return property_type == "apartment"
+    return apartment_word_in_url(str(row.get("source_url", "")))
 
 
 def clean_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -1859,7 +1960,7 @@ def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Write the final model-training CSV.
+    """Write the full extracted training CSV.
 
     UTF-8 with BOM makes the file easier to open in Excel on Windows.
     """
@@ -1867,6 +1968,16 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=CSV_COLUMNS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_model_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    """Write a compact CSV with the target plus selected prediction features."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8-sig", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=MODEL_CSV_COLUMNS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -1921,11 +2032,13 @@ def main() -> None:
 
     all_rows = dedupe_rows(all_rows)
     write_csv(args.output, all_rows)
+    write_model_csv(args.model_output, all_rows)
     write_jsonl(args.raw_output, all_raw_pages)
 
     print("\nDone")
     print(f"CSV rows: {len(all_rows)}")
     print(f"CSV file: {args.output}")
+    print(f"Model CSV file: {args.model_output}")
     print(f"Raw pages: {len(all_raw_pages)}")
     print(f"Raw JSONL file: {args.raw_output}")
 
