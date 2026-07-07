@@ -36,7 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse, urlunparse, urldefrag
+from urllib.parse import unquote, urljoin, urlparse, urlunparse, urldefrag
 from urllib.robotparser import RobotFileParser
 
 try:
@@ -77,6 +77,7 @@ class SiteConfig:
     country: str
     sale_paths: tuple[str, ...]
     apartment_paths: tuple[str, ...]
+    house_paths: tuple[str, ...]
     detail_patterns: tuple[re.Pattern[str], ...]
     useful_words: tuple[str, ...]
 
@@ -130,6 +131,21 @@ SITE_CONFIGS = (
             "/departamentos/venta/la-plata",
             "/departamentos-en-venta",
         ),
+        house_paths=(
+            "/casas/venta/argentina",
+            "/casas/venta/capital-federal",
+            "/casas/venta/buenos-aires",
+            "/casas/venta/gba-norte",
+            "/casas/venta/gba-sur",
+            "/casas/venta/gba-oeste",
+            "/casas/venta/palermo",
+            "/casas/venta/belgrano",
+            "/casas/venta/caballito",
+            "/casas/venta/olivos",
+            "/casas/venta/tigre",
+            "/casas/venta/la-plata",
+            "/casas-en-venta",
+        ),
         detail_patterns=(re.compile(r"--\d+(?:$|[/?])"),),
         useful_words=("venta", "departamento", "casa", "terreno", "inmueble"),
     ),
@@ -177,6 +193,24 @@ SITE_CONFIGS = (
             "/departamentos-venta-la-plata.html",
             "/departamentos-venta-nueva-cordoba.html",
             "/departamentos-venta-general-paz.html",
+        ),
+        house_paths=(
+            "/casas-venta.html",
+            "/casas-venta-capital-federal.html",
+            "/casas-venta-gba-norte.html",
+            "/casas-venta-gba-sur.html",
+            "/casas-venta-gba-oeste.html",
+            "/casas-venta-palermo.html",
+            "/casas-venta-belgrano.html",
+            "/casas-venta-caballito.html",
+            "/casas-venta-olivos.html",
+            "/casas-venta-tigre.html",
+            "/casas-venta-la-plata.html",
+            "/casas-venta-pilar.html",
+            "/casas-venta-nordelta.html",
+            "/casas-venta-san-isidro.html",
+            "/casas-venta-vicente-lopez.html",
+            "/casas-venta-cordoba.html",
         ),
         detail_patterns=(
             re.compile(r"/propiedades/.*\.html(?:$|[/?])"),
@@ -239,6 +273,22 @@ SITE_CONFIGS = (
             "/venta/apartamentos/canelones",
             "/venta/apartamentos/ciudad-de-la-costa",
         ),
+        house_paths=(
+            "/venta/casas",
+            "/venta/casas/montevideo",
+            "/venta/casas/punta-del-este",
+            "/venta/casas/pocitos",
+            "/venta/casas/carrasco",
+            "/venta/casas/malvin",
+            "/venta/casas/buceo",
+            "/venta/casas/parque-rodo",
+            "/venta/casas/ciudad-de-la-costa",
+            "/venta/casas/canelones",
+            "/venta/casas/maldonado",
+            "/venta/casas/roosevelt",
+            "/venta/casas/playa-brava",
+            "/venta/casas/playa-mansa",
+        ),
         detail_patterns=(re.compile(r"/\d{6,}(?:$|[/?])"),),
         useful_words=("venta", "apartamento", "casa", "terreno", "inmuebles"),
     ),
@@ -258,6 +308,13 @@ SITE_CONFIGS = (
             "/inmuebles/apartamentos/venta",
             "/inmuebles/apartamentos/venta/montevideo",
             "/inmuebles/apartamentos/venta/punta-del-este",
+        ),
+        house_paths=(
+            "/inmuebles/casas/venta",
+            "/inmuebles/casas/venta/montevideo",
+            "/inmuebles/casas/venta/punta-del-este",
+            "/inmuebles/casas/venta/canelones",
+            "/inmuebles/casas/venta/maldonado",
         ),
         detail_patterns=(
             re.compile(r"/[^/?#]+-inmuebles-\d+(?:$|[/?])"),
@@ -409,6 +466,7 @@ AMENITY_COLUMNS = [
     "has_virtual_tour",
     "is_accessible",
     "is_apartment",
+    "is_house",
     "is_back_facing",
     "is_bright",
     "is_currently_occupied",
@@ -438,20 +496,47 @@ AMENITY_COLUMNS = [
 CSV_COLUMNS = BASE_COLUMNS + AMENITY_COLUMNS
 TARGET_COLUMN = "price_usd"
 MODEL_FEATURE_COLUMNS = [
+    "property_type",
+    "property_subtype",
+    "location_key",
+    "country",
+    "province",
+    "city",
+    "neighborhood",
     "effective_area_sqm",
+    "covered_area_sqm",
+    "total_area_sqm",
+    "uncovered_area_sqm",
     "bedrooms",
     "bathrooms",
     "total_rooms",
+    "toilets",
+    "bathroom_ratio",
     "parking_spaces",
     "has_parking",
     "floor_number",
+    "floors_in_building",
     "is_high_floor",
-    "bathroom_ratio",
-    "expenses_usd",
     "age_years",
-    "location_key",
-    "property_type",
+    "expenses_usd",
     "amenity_count",
+    "is_apartment",
+    "is_house",
+    "is_new_construction",
+    "is_under_construction",
+    "has_balcony",
+    "has_terrace",
+    "has_garden",
+    "has_patio",
+    "has_pool",
+    "has_elevator",
+    "has_security",
+    "has_storage_room",
+    "has_laundry_room",
+    "has_air_conditioning",
+    "has_heating",
+    "has_grill",
+    "pets_allowed",
 ]
 MODEL_CSV_COLUMNS = [TARGET_COLUMN] + MODEL_FEATURE_COLUMNS
 AMENITY_COUNT_EXCLUDE = {
@@ -500,11 +585,11 @@ NUMERIC_COLUMNS = {
 
 PROPERTY_TYPE_PATTERNS = (
     (re.compile(r"\b(departamento|apartamento|apartment|monoambiente)\b", re.I), "Apartment"),
-    (re.compile(r"\b(casa|house|chalet)\b", re.I), "House"),
+    (re.compile(r"\b(casa|house|chalet|residencia)\b", re.I), "House"),
     (re.compile(r"\b(ph)\b", re.I), "PH"),
     (re.compile(r"\b(terreno|lote|land)\b", re.I), "Land"),
-    (re.compile(r"\b(oficina|office)\b", re.I), "Office"),
-    (re.compile(r"\b(local comercial|local|retail)\b", re.I), "Commercial Space"),
+    (re.compile(r"\b(oficina|oficinas|office|offices)\b", re.I), "Office"),
+    (re.compile(r"\b(local comercial|local|locales|retail)\b", re.I), "Commercial Space"),
     (re.compile(r"\b(cochera|garage|garaje)\b", re.I), "Parking Space"),
     (re.compile(r"\b(campo|chacra|farm)\b", re.I), "Farm"),
 )
@@ -632,9 +717,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pages-per-site", type=int, default=300)
     parser.add_argument("--max-properties-per-site", type=int, default=200)
     parser.add_argument(
+        "--property-mode",
+        choices=("residences", "apartments", "houses", "all"),
+        default="residences",
+        help="Which property rows to keep. Default keeps apartments and houses.",
+    )
+    parser.add_argument(
         "--apartments-only",
         action="store_true",
-        help="Use apartment-focused seeds and keep only apartment listings.",
+        help="Backward-compatible alias for --property-mode apartments.",
     )
     parser.add_argument(
         "--sites",
@@ -654,7 +745,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print the sites and seed URLs without downloading pages.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.apartments_only:
+        args.property_mode = "apartments"
+    return args
 
 
 def read_site_urls(path: Path) -> list[str]:
@@ -696,24 +790,61 @@ def config_for_url(url: str) -> SiteConfig | None:
     return None
 
 
+def url_path_text(url: str) -> str:
+    """Return the decoded URL path without the domain/query."""
+
+    return unquote(urlparse(url).path).lower()
+
+
+def url_has_path_word(url: str, words: tuple[str, ...]) -> bool:
+    """Return True when one word appears as a path token."""
+
+    path = url_path_text(url)
+    pattern = r"(?:^|[-_/])(" + "|".join(re.escape(word) for word in words) + r")(?:[-_/]|$)"
+    return re.search(pattern, path) is not None
+
+
 def apartment_word_in_url(url: str) -> bool:
     """Return True when a URL looks apartment-related.
 
     This gives --apartments-only a cheap URL filter before downloading pages.
     """
 
-    lower = url.lower()
-    return any(word in lower for word in ("departamento", "departamentos", "apartamento", "apartamentos"))
+    return url_has_path_word(url, ("departamento", "departamentos", "apartamento", "apartamentos"))
 
 
-def build_seed_urls(base_url: str, config: SiteConfig, apartments_only: bool = False) -> list[str]:
+def house_word_in_url(url: str) -> bool:
+    """Return True when a URL looks house-related."""
+
+    return url_has_path_word(url, ("casa", "casas", "house", "houses", "chalet"))
+
+
+def residence_word_in_url(url: str) -> bool:
+    """Return True when a URL looks related to a sellable residence."""
+
+    return apartment_word_in_url(url) or house_word_in_url(url) or url_has_path_word(url, ("ph",))
+
+
+def seed_paths_for_mode(config: SiteConfig, property_mode: str) -> tuple[str, ...]:
+    """Choose targeted seed paths for the requested property mode."""
+
+    if property_mode == "apartments":
+        return config.apartment_paths
+    if property_mode == "houses":
+        return config.house_paths
+    if property_mode == "residences":
+        return tuple(dict.fromkeys((*config.house_paths, *config.apartment_paths)))
+    return config.sale_paths
+
+
+def build_seed_urls(base_url: str, config: SiteConfig, property_mode: str = "residences") -> list[str]:
     """Create the first sale/listing pages to crawl for one site.
 
     The sitelist contains domains only, so the scraper adds known sale paths
     for apartments, houses, land, and broad real-estate searches.
     """
 
-    paths = config.apartment_paths if apartments_only else config.sale_paths
+    paths = seed_paths_for_mode(config, property_mode)
     return [urljoin(base_url.rstrip("/") + "/", path.lstrip("/")) for path in paths]
 
 
@@ -805,7 +936,7 @@ def looks_like_detail_url(url: str, config: SiteConfig) -> bool:
     return any(pattern.search(url) for pattern in config.detail_patterns)
 
 
-def looks_useful_url(url: str, config: SiteConfig, apartments_only: bool = False) -> bool:
+def looks_useful_url(url: str, config: SiteConfig, property_mode: str = "residences") -> bool:
     """Keep only listing/search/detail URLs worth crawling.
 
     This avoids assets, login pages, and unrelated site sections.
@@ -816,7 +947,11 @@ def looks_useful_url(url: str, config: SiteConfig, apartments_only: bool = False
         return False
     if any(bad in lower for bad in ("/login", "/signin", "/contact", "/contacto", "/ayuda")):
         return False
-    if apartments_only and not apartment_word_in_url(url):
+    if property_mode == "apartments" and not apartment_word_in_url(url):
+        return False
+    if property_mode == "houses" and not house_word_in_url(url):
+        return False
+    if property_mode == "residences" and not residence_word_in_url(url):
         return False
     if looks_like_detail_url(url, config):
         return "alquiler" not in lower
@@ -1267,10 +1402,14 @@ def infer_property_type(url: str, title: str, text: str) -> str:
     labels or only exposes the type in the URL.
     """
 
-    sample = f"{url} {title} {text[:800]}"
-    for pattern, label in PROPERTY_TYPE_PATTERNS:
-        if pattern.search(sample):
-            return label
+    for sample in (f"{url_path_text(url)} {title}", text[:800]):
+        matches: list[tuple[int, str]] = []
+        for pattern, label in PROPERTY_TYPE_PATTERNS:
+            match = pattern.search(sample)
+            if match:
+                matches.append((match.start(), label))
+        if matches:
+            return min(matches, key=lambda item: item[0])[1]
     return ""
 
 
@@ -1557,6 +1696,7 @@ def add_derived_features(row: dict[str, Any]) -> None:
     )
 
     row["is_apartment"] = 1 if property_type == "apartment" else 0
+    row["is_house"] = 1 if property_type == "house" else 0
     row["is_studio_apartment"] = 1 if row.get("property_subtype") == "Studio" or row.get("total_rooms") == 1 else 0
     row["is_duplex"] = 1 if row.get("property_subtype") == "Duplex" else 0
     row["is_penthouse"] = 1 if row.get("property_subtype") == "Penthouse" else 0
@@ -1651,7 +1791,7 @@ def find_links(
     current_url: str,
     base_url: str,
     config: SiteConfig,
-    apartments_only: bool = False,
+    property_mode: str = "residences",
 ) -> list[str]:
     """Collect useful same-site links from one page.
 
@@ -1680,7 +1820,7 @@ def find_links(
         url = clean_discovered_url(value, current_url)
         if not url or not same_domain(url, base_url):
             continue
-        if looks_useful_url(url, config, apartments_only):
+        if looks_useful_url(url, config, property_mode):
             links.append(url)
     return sorted(dict.fromkeys(links))
 
@@ -1746,19 +1886,28 @@ def extract_property_row(
     return clean_row(row)
 
 
-def row_matches_property_mode(row: dict[str, Any], apartments_only: bool) -> bool:
+def row_matches_property_mode(row: dict[str, Any], property_mode: str) -> bool:
     """Check whether an extracted row matches the requested property mode.
 
     URL filtering reduces wasted requests, but row filtering is the final guard
-    that keeps apartment-only datasets clean.
+    that keeps filtered datasets clean.
     """
 
-    if not apartments_only:
+    if property_mode == "all":
         return True
     property_type = str(row.get("property_type", "")).lower()
     if property_type:
-        return property_type == "apartment"
-    return apartment_word_in_url(str(row.get("source_url", "")))
+        if property_mode == "apartments":
+            return property_type == "apartment"
+        if property_mode == "houses":
+            return property_type == "house"
+        return property_type in {"apartment", "house", "ph"}
+    source_url = str(row.get("source_url", ""))
+    if property_mode == "apartments":
+        return apartment_word_in_url(source_url)
+    if property_mode == "houses":
+        return house_word_in_url(source_url)
+    return residence_word_in_url(source_url)
 
 
 def clean_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -1846,7 +1995,7 @@ def crawl_site(
     robots.txt by default, and stops at the requested limits.
     """
 
-    seeds = build_seed_urls(base_url, config, args.apartments_only)
+    seeds = build_seed_urls(base_url, config, args.property_mode)
     queue = deque(seeds)
     seen_urls = set(seeds)
     rows: list[dict[str, Any]] = []
@@ -1897,8 +2046,8 @@ def crawl_site(
         if looks_like_detail_url(url, config):
             row = extract_property_row(url, config, soup, page_text, json_blocks, scraped_at)
             if row:
-                if not row_matches_property_mode(row, args.apartments_only):
-                    print(f"  non-apartment skipped: {url}")
+                if not row_matches_property_mode(row, args.property_mode):
+                    print(f"  {args.property_mode} mode skipped: {url}")
                     raw_pages.append(raw_page_record(url, status_code, page_text, row))
                     polite_sleep(args.delay)
                     continue
@@ -1912,7 +2061,7 @@ def crawl_site(
 
         raw_pages.append(raw_page_record(url, status_code, page_text, row))
 
-        links = find_links(soup, html, url, base_url, config, args.apartments_only)
+        links = find_links(soup, html, url, base_url, config, args.property_mode)
         detail_links = [link for link in links if looks_like_detail_url(link, config)]
         search_links = [link for link in links if not looks_like_detail_url(link, config)]
 
@@ -2018,7 +2167,7 @@ def main() -> None:
     if args.dry_run:
         for base_url, config in planned_sites:
             print(f"{config.name}: {base_url}")
-            for seed in build_seed_urls(base_url, config, args.apartments_only):
+            for seed in build_seed_urls(base_url, config, args.property_mode):
                 print(f"  {seed}")
         return
 
