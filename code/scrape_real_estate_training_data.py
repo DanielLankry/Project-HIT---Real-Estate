@@ -1,5 +1,5 @@
 """
-Simple real-estate scraper for model-training data.
+ real-estate scraper for model-training data.
 
 What it does:
 1. Reads the web sites from ../docs/sitelist.md
@@ -498,18 +498,27 @@ TARGET_COLUMN = "price_usd"
 MODEL_FEATURE_COLUMNS = [
     "property_type",
     "property_subtype",
+    "publication_type",
+    "construction_stage",
     "location_key",
     "country",
     "province",
     "city",
     "neighborhood",
+    "latitude",
+    "longitude",
+    "orientation",
     "effective_area_sqm",
     "covered_area_sqm",
     "total_area_sqm",
+    "semicovered_area_sqm",
     "uncovered_area_sqm",
+    "area_per_room_sqm",
+    "area_bucket",
     "bedrooms",
     "bathrooms",
     "total_rooms",
+    "room_bucket",
     "toilets",
     "bathroom_ratio",
     "parking_spaces",
@@ -518,7 +527,10 @@ MODEL_FEATURE_COLUMNS = [
     "floors_in_building",
     "is_high_floor",
     "age_years",
+    "age_bucket",
+    "floor_bucket",
     "expenses_usd",
+    "distance_to_sea_blocks",
     "amenity_count",
     "is_apartment",
     "is_house",
@@ -536,6 +548,15 @@ MODEL_FEATURE_COLUMNS = [
     "has_air_conditioning",
     "has_heating",
     "has_grill",
+    "has_gym",
+    "has_doorman",
+    "is_furnished",
+    "is_gated_community",
+    "is_near_beach",
+    "is_near_park",
+    "is_near_sea",
+    "is_near_subway",
+    "is_owner_direct",
     "pets_allowed",
 ]
 MODEL_CSV_COLUMNS = [TARGET_COLUMN] + MODEL_FEATURE_COLUMNS
@@ -744,6 +765,16 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Print the sites and seed URLs without downloading pages.",
+    )
+    parser.add_argument(
+        "--merge-existing",
+        action="store_true",
+        help="Keep existing full CSV rows and merge new unique listings into them.",
+    )
+    parser.add_argument(
+        "--rebuild-model-only",
+        action="store_true",
+        help="Rebuild the compact model CSV from the existing full CSV without crawling.",
     )
     args = parser.parse_args()
     if args.apartments_only:
@@ -1137,6 +1168,26 @@ def first_json_value(json_blocks: list[Any], *keys: str) -> str:
     return ""
 
 
+def first_json_number(json_blocks: list[Any], *keys: str) -> float | None:
+    """Return the first usable number stored under a structured-data key.
+
+    JSON-LD sometimes stores a scalar directly and sometimes wraps it in a
+    QuantitativeValue object. Reading both forms gives cleaner room and area
+    values than relying only on nearby page text.
+    """
+
+    wanted = {key.lower() for key in keys}
+    for value in json_values(json_blocks, wanted):
+        candidates = [value]
+        if isinstance(value, dict):
+            candidates = [value.get("value"), value.get("amount")]
+        for candidate in candidates:
+            number = parse_number(candidate)
+            if number is not None:
+                return number
+    return None
+
+
 def parse_number(value: Any) -> float | None:
     """Parse the first decimal-like number from text.
 
@@ -1337,7 +1388,46 @@ def extract_location_from_url(row: dict[str, Any], url: str) -> None:
     city names in the path.
     """
 
-    path = urlparse(url).path.strip("/")
+    path = unquote(urlparse(url).path.strip("/"))
+
+    # InfoCasas commonly puts the place in a long free-form slug instead of
+    # exposing a clean address object. A small known-place map recovers useful
+    # city/neighborhood categories without trying to parse arbitrary prose.
+    if row.get("country") == "UY":
+        listing_slug = path.split("/", 1)[0]
+        location_hints = (
+            ("playa-mansa", "Maldonado", "Punta del Este", "Playa Mansa"),
+            ("playa-brava", "Maldonado", "Punta del Este", "Playa Brava"),
+            ("roosevelt", "Maldonado", "Punta del Este", "Roosevelt"),
+            ("peninsula", "Maldonado", "Punta del Este", "Península"),
+            ("punta-del-este", "Maldonado", "Punta del Este", ""),
+            ("la-blanqueada", "Montevideo", "Montevideo", "La Blanqueada"),
+            ("punta-carretas", "Montevideo", "Montevideo", "Punta Carretas"),
+            ("parque-batlle", "Montevideo", "Montevideo", "Parque Batlle"),
+            ("parque-rodo", "Montevideo", "Montevideo", "Parque Rodó"),
+            ("tres-cruces", "Montevideo", "Montevideo", "Tres Cruces"),
+            ("brazo-oriental", "Montevideo", "Montevideo", "Brazo Oriental"),
+            ("ciudad-vieja", "Montevideo", "Montevideo", "Ciudad Vieja"),
+            ("pocitos", "Montevideo", "Montevideo", "Pocitos"),
+            ("cordon", "Montevideo", "Montevideo", "Cordón"),
+            ("malvin", "Montevideo", "Montevideo", "Malvín"),
+            ("carrasco", "Montevideo", "Montevideo", "Carrasco"),
+            ("prado", "Montevideo", "Montevideo", "Prado"),
+            ("buceo", "Montevideo", "Montevideo", "Buceo"),
+            ("aguada", "Montevideo", "Montevideo", "Aguada"),
+            ("centro", "Montevideo", "Montevideo", "Centro"),
+            ("montevideo", "Montevideo", "Montevideo", ""),
+        )
+        for slug, province, city, neighborhood in location_hints:
+            if re.search(rf"(?:^|-)({re.escape(slug)})(?:-|$)", listing_slug, re.I):
+                if not row.get("province"):
+                    row["province"] = province
+                if not row.get("city"):
+                    row["city"] = city
+                if neighborhood and not row.get("neighborhood"):
+                    row["neighborhood"] = neighborhood
+                break
+
     match = re.search(r"(?:apartamento|departamento|casa|terreno)-en-([^/]+?)(?:/\d{6,}|$)", path, re.I)
     if not match:
         return
@@ -1376,13 +1466,21 @@ def extract_location(row: dict[str, Any], text: str, json_blocks: list[Any]) -> 
             continue
         address = node.get("address")
         if isinstance(address, dict):
-            row.setdefault("street", clean_text(address.get("streetAddress")))
-            row.setdefault("city", clean_text(address.get("addressLocality")))
-            row.setdefault("province", clean_text(address.get("addressRegion")))
-            row.setdefault("neighborhood", clean_text(address.get("addressSuburb")))
+            address_fields = {
+                "street": address.get("streetAddress"),
+                "city": address.get("addressLocality"),
+                "province": address.get("addressRegion"),
+                "neighborhood": address.get("addressSuburb"),
+            }
+            for field, value in address_fields.items():
+                cleaned_value = clean_location_part(value)
+                if cleaned_value and not row.get(field):
+                    row[field] = cleaned_value
         if "geo" in node and isinstance(node["geo"], dict):
-            row.setdefault("latitude", parse_number(node["geo"].get("latitude")))
-            row.setdefault("longitude", parse_number(node["geo"].get("longitude")))
+            if not row.get("latitude"):
+                row["latitude"] = parse_number(node["geo"].get("latitude"))
+            if not row.get("longitude"):
+                row["longitude"] = parse_number(node["geo"].get("longitude"))
 
     title = row.get("listing_title", "")
     match = re.search(r"\ben\s+([^,|]+),\s*([^,|]+)", title, re.I)
@@ -1402,7 +1500,9 @@ def infer_property_type(url: str, title: str, text: str) -> str:
     labels or only exposes the type in the URL.
     """
 
-    for sample in (f"{url_path_text(url)} {title}", text[:800]):
+    # The detail URL is the cleanest source. Page bodies often contain related
+    # apartment cards that can otherwise mislabel a land or farm listing.
+    for sample in (url_path_text(url), title, text[:800]):
         matches: list[tuple[int, str]] = []
         for pattern, label in PROPERTY_TYPE_PATTERNS:
             match = pattern.search(sample)
@@ -1466,35 +1566,47 @@ def extract_first_count(text: str, patterns: tuple[str, ...]) -> int | None:
     return None
 
 
-def extract_counts_and_areas(row: dict[str, Any], text: str) -> None:
+def extract_counts_and_areas(
+    row: dict[str, Any], text: str, json_blocks: list[Any]
+) -> None:
     """Extract numeric property features from visible text.
 
     These values are high-signal model inputs and are usually present on detail
     pages even when structured JSON is incomplete.
     """
 
-    row["total_rooms"] = extract_first_count(
-        text,
-        (
-            r"(\d+(?:[.,]\d+)?)\s*ambientes?",
-            r"(\d+(?:[.,]\d+)?)\s*rooms?",
-        ),
+    row["total_rooms"] = first_json_number(json_blocks, "numberOfRooms", "rooms")
+    if row["total_rooms"] is None:
+        row["total_rooms"] = extract_first_count(
+            text,
+            (
+                r"(\d+(?:[.,]\d+)?)\s*ambientes?",
+                r"(\d+(?:[.,]\d+)?)\s*rooms?",
+            ),
+        )
+    row["bedrooms"] = first_json_number(
+        json_blocks, "numberOfBedrooms", "numberOfBedroomsTotal"
     )
-    row["bedrooms"] = extract_first_count(
-        text,
-        (
-            r"(\d+(?:[.,]\d+)?)\s*dormitorios?",
-            r"(\d+(?:[.,]\d+)?)\s*dorms?\.?",
-            r"(\d+(?:[.,]\d+)?)\s*bedrooms?",
-        ),
+    if row["bedrooms"] is None:
+        row["bedrooms"] = extract_first_count(
+            text,
+            (
+                r"(\d+(?:[.,]\d+)?)\s*dormitorios?",
+                r"(\d+(?:[.,]\d+)?)\s*dorms?\.?",
+                r"(\d+(?:[.,]\d+)?)\s*bedrooms?",
+            ),
+        )
+    row["bathrooms"] = first_json_number(
+        json_blocks, "numberOfBathrooms", "numberOfBathroomsTotal"
     )
-    row["bathrooms"] = extract_first_count(
-        text,
-        (
-            r"(\d+(?:[.,]\d+)?)\s*ba[ñn]os?",
-            r"(\d+(?:[.,]\d+)?)\s*bathrooms?",
-        ),
-    )
+    if row["bathrooms"] is None:
+        row["bathrooms"] = extract_first_count(
+            text,
+            (
+                r"(\d+(?:[.,]\d+)?)\s*ba[ñn]os?",
+                r"(\d+(?:[.,]\d+)?)\s*bathrooms?",
+            ),
+        )
     row["parking_spaces"] = extract_first_count(
         text,
         (
@@ -1518,10 +1630,30 @@ def extract_counts_and_areas(row: dict[str, Any], text: str) -> None:
             r"(\d+)[°º]?\s*piso",
         ),
     )
-    row["covered_area_sqm"] = extract_area(
+    row["floors_in_building"] = extract_first_count(
         text,
-        ("cubierta", "construidos", "edificados", "covered"),
+        (
+            r"edificio\s+de\s+(\d+)\s+(?:pisos|plantas)",
+            r"torre\s+de\s+(\d+)\s+(?:pisos|plantas)",
+        ),
     )
+    row["units_per_floor"] = extract_first_count(
+        text,
+        (r"(\d+)\s+(?:unidades|departamentos)\s+por\s+piso",),
+    )
+    row["number_of_floors_in_unit"] = extract_first_count(
+        text,
+        (
+            r"(?:desarrollad[oa]|distribuid[oa])\s+en\s+(\d+)\s+plantas",
+            r"(\d+)\s+plantas\s+(?:propias|internas)",
+        ),
+    )
+    row["covered_area_sqm"] = first_json_number(json_blocks, "floorSize")
+    if row["covered_area_sqm"] is None:
+        row["covered_area_sqm"] = extract_area(
+            text,
+            ("cubierta", "construidos", "edificados", "covered"),
+        )
     row["total_area_sqm"] = extract_area(
         text,
         ("total", "terreno", "superficie", "lote"),
@@ -1553,6 +1685,9 @@ def clean_numeric_outliers(row: dict[str, Any]) -> None:
         "semicovered_area_sqm": 1_000,
         "uncovered_area_sqm": 5_000,
         "age_years": 250,
+        "number_of_floors_in_unit": 10,
+        "floors_in_building": 150,
+        "units_per_floor": 100,
         "floor_number": 100,
         "distance_to_sea_blocks": 500,
         "expenses_usd": 20_000,
@@ -1561,6 +1696,56 @@ def clean_numeric_outliers(row: dict[str, Any]) -> None:
         value = parse_number(row.get(field))
         if value is not None and (value < 0 or value > maximum):
             row[field] = ""
+
+    # Tiny residence areas are usually balcony sizes or unrelated page-card
+    # values rather than the usable area of the listed home.
+    if clean_text(row.get("property_type")) in {"Apartment", "House", "PH"}:
+        for field in ("covered_area_sqm", "total_area_sqm"):
+            value = parse_number(row.get(field))
+            if value is not None and value < 10:
+                row[field] = ""
+
+    covered = parse_number(row.get("covered_area_sqm"))
+    total = parse_number(row.get("total_area_sqm"))
+    if covered is not None and total is not None and covered > total:
+        # Close, plausible pairs are commonly reversed labels. When the smaller
+        # value is clearly a balcony/terrace size, keep covered area and drop the
+        # unreliable total instead of manufacturing a value.
+        if total >= 20 and covered / total <= 5:
+            row["covered_area_sqm"], row["total_area_sqm"] = total, covered
+        else:
+            row["total_area_sqm"] = ""
+
+    total = parse_number(row.get("total_area_sqm"))
+    if total is not None:
+        for field in ("semicovered_area_sqm", "uncovered_area_sqm"):
+            value = parse_number(row.get(field))
+            if value is not None and value > total:
+                row[field] = ""
+
+    # Reject missing sentinels and coordinates outside the configured country.
+    latitude = parse_number(row.get("latitude"))
+    longitude = parse_number(row.get("longitude"))
+    country_bounds = {
+        "AR": ((-55.5, -21.0), (-74.0, -53.0)),
+        "UY": ((-35.5, -30.0), (-58.5, -53.0)),
+    }
+    bounds = country_bounds.get(clean_text(row.get("country")))
+    valid_coordinates = (
+        latitude is not None
+        and longitude is not None
+        and not (latitude == 0 and longitude == 0)
+        and (
+            bounds is None
+            or (
+                bounds[0][0] <= latitude <= bounds[0][1]
+                and bounds[1][0] <= longitude <= bounds[1][1]
+            )
+        )
+    )
+    if not valid_coordinates:
+        row["latitude"] = ""
+        row["longitude"] = ""
 
     if row.get("property_subtype") == "Studio" or row.get("total_rooms") == 1:
         row["bedrooms"] = 0
@@ -1871,12 +2056,12 @@ def extract_property_row(
     extract_expenses(row, page_text, config.country)
     extract_location(row, page_text, json_blocks)
     extract_location_from_url(row, url)
-    extract_counts_and_areas(row, page_text)
-    extract_orientation(row, page_text)
+    extract_counts_and_areas(row, page_text, json_blocks)
     listing_feature_text = f"{title} {description}"
+    extract_orientation(row, listing_feature_text)
     extract_listing_status(row, listing_feature_text)
-    extract_distance_features(row, page_text)
-    extract_amenities(row, page_text)
+    extract_distance_features(row, listing_feature_text)
+    extract_amenities(row, listing_feature_text)
     clean_numeric_outliers(row)
     add_derived_features(row)
 
@@ -1971,7 +2156,9 @@ def row_dedupe_key(row: dict[str, Any]) -> tuple[Any, ...]:
     stable property facts available in the row.
     """
 
-    listing_id = listing_id_from_url(str(row.get("source_url", "")))
+    listing_id = clean_text(row.get("listing_id")) or listing_id_from_url(
+        str(row.get("source_url", ""))
+    )
     if listing_id:
         return (row.get("source_domain"), listing_id)
     return (
@@ -2108,6 +2295,67 @@ def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return unique_rows
 
 
+def read_existing_rows(path: Path) -> list[dict[str, Any]]:
+    """Load and refresh rows from a previous full CSV.
+
+    This supports incremental collection without a database. Existing rows are
+    normalized again so current type, validity, and derived-feature rules also
+    apply when rebuilding the compact model file.
+    """
+
+    if not path.exists():
+        return []
+
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        for source_row in csv.DictReader(file):
+            row = clean_row(dict(source_row))
+            listing_text = f"{row.get('listing_title', '')} {row.get('description', '')}"
+            inferred_type = infer_property_type(
+                str(row.get("source_url", "")),
+                str(row.get("listing_title", "")),
+                str(row.get("description", "")),
+            )
+            if inferred_type:
+                row["property_type"] = inferred_type
+            extract_location_from_url(row, str(row.get("source_url", "")))
+
+            # Older exports matched amenities against the complete page, where
+            # related-listing cards polluted flags such as pool and garden.
+            # Rebuilding from listing-specific text makes existing data usable
+            # without downloading all pages again.
+            for column in AMENITY_COLUMNS:
+                row[column] = 0
+            row["orientation"] = ""
+            row["construction_stage"] = ""
+            row["publication_type"] = ""
+            row["distance_to_sea_blocks"] = ""
+            extract_orientation(row, listing_text)
+            extract_listing_status(row, listing_text)
+            extract_distance_features(row, listing_text)
+            extract_amenities(row, listing_text)
+            clean_numeric_outliers(row)
+            add_derived_features(row)
+            rows.append(clean_row(row))
+    return dedupe_rows(rows)
+
+
+def is_model_ready_row(row: dict[str, Any]) -> bool:
+    """Keep residence rows with a target and at least one core size signal.
+
+    The compact file is intended for home-price modeling, so land, commercial,
+    and nearly empty rows stay available in the full debug CSV but do not add
+    noise to the training table.
+    """
+
+    if parse_number(row.get(TARGET_COLUMN)) is None:
+        return False
+    if clean_text(row.get("property_type")) not in {"Apartment", "House", "PH"}:
+        return False
+    evidence_fields = ("effective_area_sqm", "bedrooms", "bathrooms")
+    return any(row.get(field) not in ("", None) for field in evidence_fields)
+
+
 def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
     """Write the full extracted training CSV.
 
@@ -2121,14 +2369,25 @@ def write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         writer.writerows(rows)
 
 
-def write_model_csv(path: Path, rows: list[dict[str, Any]]) -> None:
-    """Write a compact CSV with the target plus selected prediction features."""
+def write_model_csv(path: Path, rows: list[dict[str, Any]]) -> int:
+    """Write model-ready residence rows and return the number written."""
 
+    model_rows: list[dict[str, Any]] = []
+    seen_signatures: set[tuple[Any, ...]] = set()
+    for row in rows:
+        if not is_model_ready_row(row):
+            continue
+        signature = tuple(row.get(column, "") for column in MODEL_CSV_COLUMNS)
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
+        model_rows.append(row)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as file:
         writer = csv.DictWriter(file, fieldnames=MODEL_CSV_COLUMNS, extrasaction="ignore")
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(model_rows)
+    return len(model_rows)
 
 
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
@@ -2155,6 +2414,16 @@ def main() -> None:
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     args = parse_args()
+
+    if args.rebuild_model_only:
+        existing_rows = read_existing_rows(args.output)
+        if not existing_rows:
+            raise SystemExit(f"No existing full CSV rows found in: {args.output}")
+        model_row_count = write_model_csv(args.model_output, existing_rows)
+        print(f"Model CSV rows: {model_row_count}")
+        print(f"Model CSV file: {args.model_output}")
+        return
+
     site_urls = read_site_urls(args.sitelist)
     session = make_session()
 
@@ -2179,14 +2448,22 @@ def main() -> None:
         all_rows.extend(rows)
         all_raw_pages.extend(raw_pages)
 
+    if args.merge_existing:
+        existing_rows = read_existing_rows(args.output)
+        print(f"Existing CSV rows loaded: {len(existing_rows)}")
+        # New rows come first so a fresh scrape replaces an older copy of the
+        # same listing when deduplication sees both.
+        all_rows.extend(existing_rows)
+
     all_rows = dedupe_rows(all_rows)
     write_csv(args.output, all_rows)
-    write_model_csv(args.model_output, all_rows)
+    model_row_count = write_model_csv(args.model_output, all_rows)
     write_jsonl(args.raw_output, all_raw_pages)
 
     print("\nDone")
     print(f"CSV rows: {len(all_rows)}")
     print(f"CSV file: {args.output}")
+    print(f"Model CSV rows: {model_row_count}")
     print(f"Model CSV file: {args.model_output}")
     print(f"Raw pages: {len(all_raw_pages)}")
     print(f"Raw JSONL file: {args.raw_output}")
