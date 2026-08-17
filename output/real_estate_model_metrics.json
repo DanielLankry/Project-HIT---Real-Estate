@@ -1,0 +1,47 @@
+{
+  "scope": "cross-sectional listing-price prediction, not future forecasting",
+  "selection_method": "training-only shuffled K-fold cross-validation by mean R2",
+  "best_model": "Ridge Regression",
+  "held_out_test_metrics": {
+    "r2": 0.623042038145588,
+    "mae_usd": 93161.14703719177,
+    "rmse_usd": 255596.88259128798,
+    "mape": 0.26214407202684803
+  },
+  "row_counts": {
+    "usable": 1589,
+    "train": 1271,
+    "test": 318
+  },
+  "feature_counts": {
+    "numeric": 38,
+    "categorical": 10,
+    "total_input": 48
+  },
+  "cross_validation": [
+    {
+      "model": "Ridge Regression",
+      "cv_r2_mean": 0.6357107574200578,
+      "cv_r2_std": 0.1799126128707131,
+      "cv_mae_usd_mean": 95472.02372875858
+    },
+    {
+      "model": "Gradient Boosting",
+      "cv_r2_mean": 0.4335422033797446,
+      "cv_r2_std": 0.21630786054367923,
+      "cv_mae_usd_mean": 100846.40529153039
+    },
+    {
+      "model": "Random Forest",
+      "cv_r2_mean": 0.43159129776833927,
+      "cv_r2_std": 0.22152106726586515,
+      "cv_mae_usd_mean": 97604.21189920901
+    },
+    {
+      "model": "Linear Regression",
+      "cv_r2_mean": 0.3813279454775542,
+      "cv_r2_std": 0.31945482192478886,
+      "cv_mae_usd_mean": 107817.57050677238
+    }
+  ]
+}
