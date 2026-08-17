@@ -1,0 +1,50 @@
+name: Model validation
+
+on:
+  pull_request:
+    paths:
+      - "code/real_estate_model_final.py"
+      - "data/scraped_real_estate_model_features.csv"
+      - "tests/**"
+      - "requirements.txt"
+      - ".github/workflows/model-validation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "code/real_estate_model_final.py"
+      - "data/scraped_real_estate_model_features.csv"
+      - "tests/**"
+      - "requirements.txt"
+      - ".github/workflows/model-validation.yml"
+
+jobs:
+  validate-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Run end-to-end model validation
+        env:
+          MPLBACKEND: Agg
+        run: >-
+          python code/real_estate_model_final.py
+          --cv-folds 3
+          --output output/ci_model_results.png
+          --metrics-output output/ci_model_metrics.json
+
