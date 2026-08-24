@@ -1347,6 +1347,8 @@ def clean_location_part(value: Any) -> str:
         "ref #",
         "referencia",
         "venta en",
+        "venta ubicado",
+        "venta ubicada",
     )
     if any(word in text.lower() for word in bad_words):
         return ""
@@ -1473,14 +1475,21 @@ def extract_location(row: dict[str, Any], text: str, json_blocks: list[Any]) -> 
                 "neighborhood": address.get("addressSuburb"),
             }
             for field, value in address_fields.items():
+                # Some sites put a full hierarchy such as
+                # "Lomas de Zamora, GBA Sur, Argentina" in addressLocality.
+                # The first part is the useful city-level category.
+                if field in {"city", "province"} and isinstance(value, str):
+                    value = value.split(",", 1)[0]
                 cleaned_value = clean_location_part(value)
                 if cleaned_value and not row.get(field):
                     row[field] = cleaned_value
         if "geo" in node and isinstance(node["geo"], dict):
+            latitude = node["geo"].get("latitude") or node["geo"].get("lat")
+            longitude = node["geo"].get("longitude") or node["geo"].get("lng")
             if not row.get("latitude"):
-                row["latitude"] = parse_number(node["geo"].get("latitude"))
+                row["latitude"] = parse_number(latitude)
             if not row.get("longitude"):
-                row["longitude"] = parse_number(node["geo"].get("longitude"))
+                row["longitude"] = parse_number(longitude)
 
     title = row.get("listing_title", "")
     match = re.search(r"\ben\s+([^,|]+),\s*([^,|]+)", title, re.I)
@@ -2156,13 +2165,22 @@ def row_dedupe_key(row: dict[str, Any]) -> tuple[Any, ...]:
     stable property facts available in the row.
     """
 
-    listing_id = clean_text(row.get("listing_id")) or listing_id_from_url(
-        str(row.get("source_url", ""))
-    )
+    source_url = str(row.get("source_url", ""))
+    source_domain = comparable_host(source_url)
+    if not source_domain:
+        source_domain = clean_text(row.get("source_domain")).lower().removeprefix("www.")
+    listing_id = clean_text(row.get("listing_id")) or listing_id_from_url(source_url)
     if listing_id:
-        return (row.get("source_domain"), listing_id)
+        return (source_domain, listing_id)
+    canonical_url = normalize_url(source_url)
+    if canonical_url:
+        parsed = urlparse(canonical_url)
+        canonical_path = parsed.path.rstrip("/") or "/"
+        canonical_url = urlunparse(
+            ("https", parsed.netloc.removeprefix("www."), canonical_path, "", parsed.query, "")
+        )
     return (
-        row.get("source_url"),
+        canonical_url,
         row.get("price_usd"),
         row.get("covered_area_sqm"),
         row.get("bedrooms"),
@@ -2390,6 +2408,46 @@ def write_model_csv(path: Path, rows: list[dict[str, Any]]) -> int:
     return len(model_rows)
 
 
+def read_existing_raw_records(path: Path) -> list[dict[str, Any]]:
+    """Load valid raw JSONL records before an incremental crawl.
+
+    Incremental collection must preserve earlier page evidence so extraction
+    problems can still be inspected after new listings are merged.
+    """
+
+    if not path.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as file:
+        for line in file:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(record, dict):
+                records.append(record)
+    return records
+
+
+def dedupe_raw_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the newest raw record for each normalized page URL.
+
+    New crawl records are passed first, so they replace older evidence for the
+    same URL while unrelated historical pages remain available.
+    """
+
+    unique_records: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    for record in records:
+        url = normalize_url(str(record.get("url", "")))
+        key = url or str(record.get("url", ""))
+        if key in seen_urls:
+            continue
+        seen_urls.add(key)
+        unique_records.append(record)
+    return unique_records
+
+
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     """Write raw page records as newline-delimited JSON.
 
@@ -2433,6 +2491,10 @@ def main() -> None:
         (url, config) for url, config in planned_sites if wanted_site(url, config, args.sites)
     ]
 
+    if not planned_sites:
+        requested = ", ".join(args.sites or []) or "the configured sitelist"
+        raise SystemExit(f"No supported sites matched: {requested}")
+
     if args.dry_run:
         for base_url, config in planned_sites:
             print(f"{config.name}: {base_url}")
@@ -2454,8 +2516,12 @@ def main() -> None:
         # New rows come first so a fresh scrape replaces an older copy of the
         # same listing when deduplication sees both.
         all_rows.extend(existing_rows)
+        existing_raw_records = read_existing_raw_records(args.raw_output)
+        print(f"Existing raw pages loaded: {len(existing_raw_records)}")
+        all_raw_pages.extend(existing_raw_records)
 
     all_rows = dedupe_rows(all_rows)
+    all_raw_pages = dedupe_raw_records(all_raw_pages)
     write_csv(args.output, all_rows)
     model_row_count = write_model_csv(args.model_output, all_rows)
     write_jsonl(args.raw_output, all_raw_pages)

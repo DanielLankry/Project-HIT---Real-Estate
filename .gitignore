@@ -2,4 +2,7 @@ AGENTS.md
 TASKS.md
 __pycache__/
 *.pyc
+.venv/
+.ipynb_checkpoints/
+output/
 data/*.jsonl

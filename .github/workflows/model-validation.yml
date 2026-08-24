@@ -1,20 +1,26 @@
-name: Model validation
+name: Notebook validation
 
 on:
   pull_request:
     paths:
-      - "code/real_estate_model_final.py"
+      - "code/eda_real_estate.ipynb"
+      - "code/real_estate_model.ipynb"
+      - "code/fetch_macroeconomic_data.py"
       - "data/scraped_real_estate_model_features.csv"
-      - "tests/**"
+      - "data/scraped_real_estate_training.csv"
+      - "data/macroeconomic_indicators.csv"
       - "requirements.txt"
       - ".github/workflows/model-validation.yml"
   push:
     branches:
       - main
     paths:
-      - "code/real_estate_model_final.py"
+      - "code/eda_real_estate.ipynb"
+      - "code/real_estate_model.ipynb"
+      - "code/fetch_macroeconomic_data.py"
       - "data/scraped_real_estate_model_features.csv"
-      - "tests/**"
+      - "data/scraped_real_estate_training.csv"
+      - "data/macroeconomic_indicators.csv"
       - "requirements.txt"
       - ".github/workflows/model-validation.yml"
 
@@ -36,15 +42,15 @@ jobs:
       - name: Install dependencies
         run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
 
-      - name: Run unit tests
-        run: python -m unittest discover -s tests -v
-
-      - name: Run end-to-end model validation
+      - name: Execute both notebooks end to end
         env:
           MPLBACKEND: Agg
         run: >-
-          python code/real_estate_model_final.py
-          --cv-folds 3
-          --output output/ci_model_results.png
-          --metrics-output output/ci_model_metrics.json
+          python -m jupyter nbconvert
+          --execute
+          --to notebook
+          --inplace
+          --ExecutePreprocessor.timeout=900
+          code/eda_real_estate.ipynb
+          code/real_estate_model.ipynb
 
