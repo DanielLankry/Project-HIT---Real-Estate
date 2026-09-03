@@ -1,107 +1,110 @@
-# Latin America Real Estate Data Project
+# Latin America Real Estate Price Estimation
 
-מדריך מלא בעברית — מה הושלם, מה נשאר, מבנה התיקיות, הוראות הפעלה
-והסבר מדדי המודל — נמצא ב־[`docs/PROJECT-GUIDE-HE.md`](docs/PROJECT-GUIDE-HE.md).
+**Core implementation status: complete.** This project collects residential
+sale listings from Argentina and Uruguay, explores the resulting data, and
+trains a leakage-safe baseline model that estimates an online asking price in
+US dollars. The local submission materials are prepared; committing or
+uploading the latest files is a separate handoff step.
 
-This project collects residential sale listings from Argentina and Uruguay,
-explores the data, and builds a basic model that estimates listing prices in
-US dollars.
+- Repository: https://github.com/DanielLankry/Project-HIT---Real-Estate
+- Full Hebrew guide: [`docs/PROJECT-GUIDE-HE.md`](docs/PROJECT-GUIDE-HE.md)
+- Recorded walkthrough: `Explaining Video.mov`
 
-The current model predicts prices for listings like those in the dataset. It
-does **not** predict future market prices because the listing data is a snapshot,
-not a historical time series.
+> **Scope note:** the original proposal included sale and rental data, direct
+> macroeconomic integration, and future-price forecasting. The implemented,
+> defensible scope is sale listings only, with macroeconomic indicators used as
+> context and a model that estimates current listing prices. The available data
+> are a cross-sectional snapshot, so future-trend forecasting requires dated
+> snapshots collected over time. This scope adjustment should be disclosed to
+> and accepted by the course instructor.
 
-## Project Status
+## Submission Deliverables
 
-| Part | Status | Main file |
+| Deliverable | File or link | Status |
 | --- | --- | --- |
-| Web scraping and cleaning | Complete | `code/scrape_real_estate_training_data.py` |
-| Full and model-ready datasets | Complete | `data/*.csv` |
-| Exploratory data analysis | Complete | `code/eda_real_estate.ipynb` |
-| Basic listing-price model | Complete | `code/real_estate_model.ipynb` |
-| English terminal price estimate | Complete | `code/predict_property.py` |
-| Economic context | Complete | `data/macroeconomic_indicators.csv` |
-| Project specification | Complete | `docs/Project-Specification.docx` |
-| Final presentation | Complete | `docs/Final-Project-Presentation.pptx` |
-| Future market-trend forecasting | Future work | Requires historical listing snapshots |
+| Specification document | `docs/Project-Specification.docx` | Complete |
+| Code, datasets, and model | [GitHub repository](https://github.com/DanielLankry/Project-HIT---Real-Estate) | Complete locally; publish latest changes if required |
+| Final presentation | `docs/Final-Project-Presentation.pptx` | Prepared locally |
+| Recorded explanation (supplementary) | `Explaining Video.mov` | Prepared locally |
+| Video slide deck (supplementary) | `HIT_Real_Estate_6_Slides.pptx` | Prepared locally |
 
-## Folders and Files
+## Results at a Glance
+
+| Item | Current result |
+| --- | ---: |
+| Full cleaned dataset | 1,777 rows × 161 columns |
+| Model-ready dataset | 1,689 rows × 63 columns |
+| Training/test split | 1,351 / 338 rows |
+| Selected model | Ridge Regression (`alpha=10`) |
+| Mean 5-fold training CV R² | 0.628 |
+| Held-out test R² | 0.475 |
+| Held-out MAE | $105,473 |
+| Held-out RMSE | $307,037 |
+| Held-out MAPE | 27.2% |
+
+The model is stronger for apartments than houses: held-out MAPE is 21.0% for
+apartments and 47.0% for houses. These are regression errors, not an “accuracy
+percentage,” and they describe the collected sample rather than both national
+markets as a whole.
+
+## Project Workflow
+
+1. `code/scrape_real_estate_training_data.py` collects approved listings,
+   normalizes fields, removes duplicates, and writes full and compact datasets.
+2. `code/fetch_macroeconomic_data.py` retrieves annual inflation and GDP-growth
+   context from the World Bank.
+3. `code/eda_real_estate.ipynb` checks data quality, distributions, outliers,
+   market coverage, correlations, and economic context.
+4. `code/real_estate_model.ipynb` performs preprocessing inside scikit-learn
+   pipelines, compares four regression baselines on training-only
+   cross-validation, and evaluates the selected model once on the held-out set.
+5. `code/predict_property.py` retrains the notebook-aligned Ridge model from the
+   current compact CSV and estimates one property from terminal input.
+
+Target-derived fields such as `price_per_sqm` are excluded from training to
+prevent leakage. Numeric imputation, scaling, categorical imputation, and
+one-hot encoding are fitted only on training data.
+
+## Repository Layout
 
 ### `code`
 
-- `scrape_real_estate_training_data.py` crawls approved real-estate sites,
-  extracts listing fields, removes duplicates, and writes the datasets.
-- `fetch_macroeconomic_data.py` downloads basic inflation and GDP-growth data
-  for Argentina and Uruguay from the World Bank API.
-- `eda_real_estate.ipynb` explains the dataset, data quality, price distribution,
-  correlations, and economic context with simple charts.
-- `real_estate_model.ipynb` prepares the data, compares basic regression models,
-  evaluates the selected model, and explains the results.
-- `predict_property.py` asks for one property's details in English, trains the
-  current Ridge baseline on the model CSV, and prints an estimated price in USD.
-  It does not create or require a separate saved-model file.
+- `scrape_real_estate_training_data.py` — collection, extraction, cleaning, and
+  compact-dataset rebuilding.
+- `fetch_macroeconomic_data.py` — World Bank context refresh.
+- `eda_real_estate.ipynb` — exploratory analysis only.
+- `real_estate_model.ipynb` — modeling source of truth, including validation
+  tables, held-out metrics, and charts.
+- `predict_property.py` — terminal inference entrypoint; no binary model artifact
+  is required or saved.
 
 ### `data`
 
-- `scraped_real_estate_training.csv` is the full cleaned extraction dataset. It
-  keeps detailed fields for checking scraper results.
-- `scraped_real_estate_model_features.csv` is the smaller model-ready dataset.
-  It keeps residential rows with usable price and size information.
-- `scraped_real_estate_raw.jsonl` stores raw page evidence for debugging. It is
-  large and is intentionally not tracked by Git.
-- `macroeconomic_indicators.csv` contains annual inflation and GDP growth for
-  2015-2024 where values are available. It provides context only; it is not
-  joined to individual listings.
+- `scraped_real_estate_training.csv` — 1,777-row detailed cleaned extraction.
+- `scraped_real_estate_model_features.csv` — 1,689-row model-ready table.
+- `scraped_real_estate_raw.jsonl` — raw page evidence for extraction debugging;
+  intentionally not tracked because of its size.
+- `macroeconomic_indicators.csv` — annual country-level context for 2015–2024.
+
+The model data contains 1,110 Uruguay rows and 579 Argentina rows: 1,261
+apartments, 427 houses, and 1 PH. The full extraction contains 1,185 InfoCasas,
+581 ZonaProp, and 11 ArgenProp rows. Gallito contributes no rows because it
+returns a Cloudflare challenge to normal requests.
 
 ### `docs`
 
-- `Project-Proposal-Template-HIT-project-center Maiora.docx.pdf` is the original
-  proposal.
-- `Project-Specification.docx` explains the goal, data, method, results,
-  limitations, and how to run the project.
-- `Final-Project-Presentation.pptx` summarizes the project for presentation.
-- `sitelist.md` lists the approved real-estate websites.
-- `CrawlSteps.pdf` contains earlier crawl notes.
+- `Project-Specification.docx` — final goal, methodology, results, limitations,
+  reproducibility instructions, and submission references.
+- `Final-Project-Presentation.pptx` — final presentation.
+- `PROJECT-GUIDE-HE.md` — full Hebrew project guide.
+- `Project-Proposal-Template-HIT-project-center Maiora.docx.pdf` — original
+  project proposal.
+- `sitelist.md` — approved listing websites.
+- `CrawlSteps.pdf` — early collection notes.
 
-### Other folders
+## Run the Project
 
-- `.github/workflows` contains the automatic notebook validation workflow.
-- `requirements.txt` lists the Python packages needed by the scraper, notebooks,
-  and terminal predictor.
-
-## Dataset Summary
-
-- Full dataset: **1,777 rows and 161 columns**.
-- Model dataset: **1,689 rows and 63 columns**.
-- Countries: **1,110 Uruguay rows** and **579 Argentina rows** in the model data.
-- Property types: **1,261 apartments**, **427 houses**, and **1 PH** in the
-  model data.
-- Full-data sources: **1,185 InfoCasas**, **581 ZonaProp**, and **11 ArgenProp**
-  rows.
-- Gallito blocks normal requests with a Cloudflare challenge, so it currently
-  contributes no rows.
-
-Important: a binary amenity value of `0` means that the listing did not mention
-the amenity. It does not prove that the property does not have it.
-
-## Basic Results
-
-The notebook selects Ridge Regression using training-only cross-validation. Its
-mean training cross-validation R2 is **0.628**. On the held-out test set it reports:
-
-- R2: **0.475**
-- Mean absolute error: **$105,473**
-- Root mean squared error: **$307,037**
-- Mean absolute percentage error: **27.2%**
-
-These are baseline regression results for the collected listings, not a claim
-about the whole Argentina and Uruguay real-estate markets. The extra rows improve
-Argentina-house coverage, but the broader held-out set is harder and the headline
-score did not improve merely because more data was added.
-
-## How to Run
-
-From the project root:
+From the project root in PowerShell:
 
 ```powershell
 python -m venv .venv
@@ -109,51 +112,57 @@ python -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Refresh the economic context:
+Run the saved analysis from top to bottom:
 
 ```powershell
-python code/fetch_macroeconomic_data.py
+python -m jupyter nbconvert --execute --to notebook --inplace `
+  --ExecutePreprocessor.timeout=900 `
+  code/eda_real_estate.ipynb code/real_estate_model.ipynb
 ```
 
-Rebuild the compact model dataset without crawling:
-
-```powershell
-python code/scrape_real_estate_training_data.py --rebuild-model-only
-```
-
-Open and run these notebooks from top to bottom:
-
-1. `code/eda_real_estate.ipynb`
-2. `code/real_estate_model.ipynb`
-
-Estimate one current listing price by entering the details in English:
+Estimate one current listing price:
 
 ```powershell
 python code/predict_property.py
 ```
 
 Use `AR` or `UY` for country and `Apartment` or `House` for property type. The
-script explains which fields are optional and warns when a location was not seen
-during training. It retrains from the current CSV each time, so newly collected
-and rebuilt data is included automatically.
+script identifies optional fields and warns when a location was not seen during
+training.
+
+Optional data refresh commands:
+
+```powershell
+python code/fetch_macroeconomic_data.py
+python code/scrape_real_estate_training_data.py --rebuild-model-only
+```
+
+The scraper also supports targeted `--sites`, `--apartments-only`, and
+incremental `--merge-existing` runs. It respects `robots.txt` by default; use
+only approved sources and crawl limits appropriate to the site.
 
 ## Data Sources
 
-- Real-estate websites are listed in `docs/sitelist.md`.
-- Inflation indicator: World Bank `FP.CPI.TOTL.ZG`.
-- GDP-growth indicator: World Bank `NY.GDP.MKTP.KD.ZG`.
-- World Bank API documentation: https://datahelpdesk.worldbank.org/knowledgebase/articles/889392
+- Approved listing sites: `docs/sitelist.md`
+- World Bank inflation indicator: `FP.CPI.TOTL.ZG`
+- World Bank real GDP-growth indicator: `NY.GDP.MKTP.KD.ZG`
+- World Bank API documentation:
+  https://datahelpdesk.worldbank.org/knowledgebase/articles/889392
 
-## Main Limitations and Next Step
+## Limitations and Next Research Step
 
-The sample is dominated by Uruguay, InfoCasas, and apartments. Prices are asking
-prices rather than confirmed sale prices. The apartment test segment is stronger
-than the house segment (MAPE 21.0% versus 47.0%), so house estimates need extra
-caution. Some Argentina location labels inherited inconsistent source hierarchy,
-so an unseen-location warning means the predictor falls back to the other
-features. The economic indicators are annual country-level context and are not
-used as listing features.
+- Prices are advertised asking prices, not completed transaction prices.
+- The sample is dominated by Uruguay, InfoCasas, and apartments.
+- A binary amenity value of `0` means “not mentioned,” not confirmed absence.
+- Some Argentina location labels inherit inconsistent source hierarchies.
+- Annual macroeconomic indicators provide context and are not listing-level
+  predictors in the current model.
 
-The next meaningful step is to collect dated snapshots of the same markets over
-time. After enough history exists, the project can test true future-trend
-forecasting without pretending that a snapshot is a time series.
+The project’s natural extension is scheduled collection of dated listing
+snapshots with stable listing identifiers. Once a sufficiently long history
+exists, prices can be aggregated by market segment, aligned with economic
+indicators, and evaluated with honest time-based forecasting splits.
+
+## Author
+
+Daniel Lankry — `lankrydaniel7@gmail.com`
